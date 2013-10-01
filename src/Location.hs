@@ -5,6 +5,7 @@ import           Control.DeepSeq (deepseq, NFData(rnf))
 import           SrcLoc hiding (Located)
 import qualified SrcLoc as GHC
 import           FastString (unpackFS)
+import           Text.PrettyPrint.ANSI.Leijen hiding ((<$>), line)
 
 #if __GLASGOW_HASKELL__ < 702
 import           Outputable (showPpr)
@@ -39,6 +40,10 @@ data Location = UnhelpfulLocation String | Location FilePath Line
 instance Show Location where
   show (UnhelpfulLocation s) = s
   show (Location file line)  = file ++ ":" ++ show line
+
+instance Pretty Location where
+  pretty (Location file line) = text file <> dullgreen colon <> int line
+  pretty (UnhelpfulLocation s) = text s
 
 instance NFData Location where
   rnf (UnhelpfulLocation str) = str `deepseq` ()

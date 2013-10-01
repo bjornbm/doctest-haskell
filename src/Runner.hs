@@ -28,6 +28,7 @@ import           Parse
 import           Location
 import           Property
 import           Runner.Example
+import           Text.PrettyPrint.ANSI.Leijen hiding ((<>), (<$>))
 
 -- | Summary of a test run.
 data Summary = Summary {
@@ -42,6 +43,16 @@ instance Show Summary where
   show (Summary examples tried errors failures) =
     printf "Examples: %d  Tried: %d  Errors: %d  Failures: %d" examples tried errors failures
 
+instance Pretty Summary where
+  pretty (Summary examples tried errors failures) =
+    dullgreen (text "Examples:") <+> int examples <+>
+    dullgreen (text "Tried:")    <+> int tried    <+>
+    dullgreen (text "Errors:")   <+> good errors  <+>
+    dullgreen (text "Failures:") <+> good failures
+   where
+    good 0 = dullgreen (int 0)
+    good n = red (int n)
+
 -- | Sum up summaries.
 instance Monoid Summary where
   mempty = Summary 0 0 0 0
@@ -55,7 +66,7 @@ runModules repl modules = do
     forM_ modules $ runModule repl
 
     -- report final summary
-    gets (show . reportStateSummary) >>= report
+    gets (pretty . reportStateSummary) >>= report
 
   return s
   where
@@ -75,7 +86,7 @@ data ReportState = ReportState {
 }
 
 -- | Add output to the report.
-report :: String -> Report ()
+report :: Doc -> Report ()
 report msg = do
   overwrite msg
 
@@ -87,19 +98,19 @@ report msg = do
 --
 -- This will be overwritten by subsequent calls to `report`/`report_`.
 -- Intermediate out may not contain any newlines.
-report_ :: String -> Report ()
+report_ :: Doc -> Report ()
 report_ msg = do
   f <- gets reportStateInteractive
   when f $ do
     overwrite msg
-    modify (\st -> st {reportStateCount = length msg})
+    modify (\st -> st {reportStateCount = length (show msg)})
 
 -- | Add output to the report, overwrite any intermediate out.
-overwrite :: String -> Report ()
+overwrite :: Doc -> Report ()
 overwrite msg = do
   n <- gets reportStateCount
-  let str | 0 < n     = "\r" ++ msg ++ replicate (n - length msg) ' '
-          | otherwise = msg
+  let str | 0 < n     = "\r" ++ show msg ++ replicate (n - length (show msg)) ' '
+          | otherwise = show msg
   liftIO (hPutStr stderr str)
 
 -- | Run all examples from given module.
@@ -132,15 +143,25 @@ runModule repl (Module module_ setup examples) = do
         Property _  -> return ()
         Example e _ -> void $ Interpreter.eval repl e
 
+infoDoc :: String -> Location -> Expression -> Doc
+infoDoc header loc expression =
+    onred (red (text "###")) <+> 
+        dullgreen (text header <+> text "in") <+>
+        pretty loc <> dullgreen (colon <+> text "expression") <+>
+        enclose (text "`")
+                (text "'")
+                (text expression)
+
+
 reportFailure :: Location -> Expression -> Report ()
 reportFailure loc expression = do
-  report (printf "### Failure in %s: expression `%s'" (show loc) expression)
+  report $ infoDoc "Failure" loc expression
   updateSummary (Summary 0 1 0 1)
 
 reportError :: Location -> Expression -> String -> Report ()
 reportError loc expression err = do
-  report (printf "### Error in %s: expression `%s'" (show loc) expression)
-  report err
+  report $ infoDoc "Error" loc expression
+  report (text err)
   updateSummary (Summary 0 1 1 0)
 
 reportSuccess :: Report ()
@@ -160,7 +181,7 @@ runTestGroup :: Interpreter -> IO () -> [Located DocTest] -> Report ()
 runTestGroup repl setup tests = do
 
   -- report intermediate summary
-  gets (show . reportStateSummary) >>= report_
+  gets (pretty . reportStateSummary) >>= report_
 
   liftIO setup
   runExampleGroup repl examples
@@ -176,7 +197,7 @@ runTestGroup repl setup tests = do
         reportError loc expression err
       Failure msg -> do
         reportFailure loc expression
-        report msg
+        report (text msg)
   where
     properties = [(loc, p) | Located loc (Property p) <- tests]
 
@@ -197,7 +218,7 @@ runExampleGroup repl = go
         Right actual -> case mkResult expected actual of
           NotEqual err -> do
             reportFailure loc expression
-            mapM_ report err
+            report err
           Equal -> do
             reportSuccess
             go xs
