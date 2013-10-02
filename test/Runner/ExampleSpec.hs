@@ -13,29 +13,32 @@ spec = do
   describe "mkResult" $ do
     it "returns Equal when output matches" $ do
       property $ \xs -> do
-        mkResult xs xs `shouldBe` Equal
+        mkResultNC xs xs `shouldBe` Nothing
 
     it "ignores trailing whitespace" $ do
-      mkResult ["foo\t"] ["foo  "] `shouldBe` Equal
+      mkResultNC ["foo\t"] ["foo  "] `shouldBe` Nothing
 
     context "when output does not matche" $ do
       it "constructs failure message" $ do
-        mkResult ["foo"] ["bar"] `shouldBe` NotEqual [
-            "expected: foo"
-          , " but got: bar"
-          ]
+        mkResultNC ["foo"] ["bar"] `shouldBe` Just
+            "expected: foo\n\
+            \ but got: bar"
 
       it "constructs failure message for multi-line output" $ do
-        mkResult ["foo", "bar"] ["foo", "baz"] `shouldBe` NotEqual [
-            "expected: foo"
-          , "          bar"
-          , " but got: foo"
-          , "          baz"
-          ]
+        mkResultNC ["foo", "bar"] ["foo", "baz"] `shouldBe` Just
+            "expected: foo\n\
+            \          bar\n\
+            \ but got: foo\n\
+            \          baz"
 
       context "when any output line contains \"unsafe\" characters" $ do
         it "uses show to format output lines" $ do
-          mkResult ["foo\160bar"] ["foo bar"] `shouldBe` NotEqual [
-              "expected: \"foo\\160bar\""
-            , " but got: \"foo bar\""
-            ]
+          mkResultNC ["foo\160bar"] ["foo bar"] `shouldBe` Just
+              "expected: \"foo\\160bar\"\n\
+              \ but got: \"foo bar\""
+
+mkResultNC :: [String] -> [String] -> Maybe String
+mkResultNC a b = case mkResult a b of
+    Equal -> Nothing
+    NotEqual doc -> Just (stripColor (show doc))
+

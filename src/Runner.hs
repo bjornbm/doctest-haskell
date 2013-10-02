@@ -45,10 +45,11 @@ instance Show Summary where
 
 instance Pretty Summary where
   pretty (Summary examples tried errors failures) =
-    dullgreen (text "Examples:") <+> int examples <+>
-    dullgreen (text "Tried:")    <+> int tried    <+>
-    dullgreen (text "Errors:")   <+> good errors  <+>
-    dullgreen (text "Failures:") <+> good failures
+   foldr1 (\a b -> a <> text "  " <> b) [
+    dullgreen (text "Examples:") <+> int examples ,
+    dullgreen (text "Tried:")    <+> int tried    ,
+    dullgreen (text "Errors:")   <+> good errors  ,
+    dullgreen (text "Failures:") <+> good failures]
    where
     good 0 = dullgreen (int 0)
     good n = red (int n)
@@ -158,10 +159,10 @@ reportFailure loc expression = do
   report $ infoDoc "Failure" loc expression
   updateSummary (Summary 0 1 0 1)
 
-reportError :: Location -> Expression -> String -> Report ()
+reportError :: Location -> Expression -> Doc -> Report ()
 reportError loc expression err = do
   report $ infoDoc "Error" loc expression
-  report (text err)
+  report err
   updateSummary (Summary 0 1 1 0)
 
 reportSuccess :: Report ()
@@ -194,7 +195,7 @@ runTestGroup repl setup tests = do
       Success ->
         reportSuccess
       Error err -> do
-        reportError loc expression err
+        reportError loc expression (text err)
       Failure msg -> do
         reportFailure loc expression
         report (text msg)

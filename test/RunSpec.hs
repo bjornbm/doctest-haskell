@@ -3,6 +3,7 @@ module RunSpec (main, spec) where
 
 import           Test.Hspec
 import           Test.QuickCheck
+import           Runner.Example (stripColor)
 import           System.Exit
 
 import           Control.Applicative
@@ -86,8 +87,8 @@ spec = do
         return ()
 
       withEnv "HASKELL_PACKAGE_SANDBOX" "test/integration/custom-package-conf/packages" $ do
-        hCapture_ [stderr] (doctest ["test/integration/custom-package-conf/Bar.hs"])
-          `shouldReturn` "Examples: 2  Tried: 2  Errors: 0  Failures: 0\n"
+        x <- hCapture_ [stderr] (doctest ["test/integration/custom-package-conf/Bar.hs"])
+        stripColor x `shouldBe` "Examples: 2  Tried: 2  Errors: 0  Failures: 0\n"
 
       `E.finally` do
         rmDir "test/integration/custom-package-conf/packages/"
