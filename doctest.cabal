@@ -27,7 +27,7 @@ source-repository head
 
 library
   exposed-modules:
-      Test.DocTest
+      Test.DocTest, Test.DocTest.Eq
   ghc-options:
       -Wall
   hs-source-dirs:
