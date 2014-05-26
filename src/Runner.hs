@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, PatternGuards #-}
 module Runner (
   runModules
 , Summary(..)
@@ -21,6 +21,8 @@ import           Data.Foldable (forM_)
 
 import           Control.Monad.Trans.State
 import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Error
 
 import           Interpreter (Interpreter)
 import qualified Interpreter
@@ -29,6 +31,7 @@ import           Location
 import           Property
 import           Runner.Example
 import           Text.PrettyPrint.ANSI.Leijen hiding ((<>), (<$>))
+import           Text.Read (readMaybe)
 
 -- | Summary of a test run.
 data Summary = Summary {
@@ -135,6 +138,7 @@ runModule repl (Module module_ setup examples) = do
       -- NOTE: It is important to do the :reload first!  There was some odd bug
       -- with a previous version of GHC (7.4.1?).
       void $ Interpreter.eval repl   ":reload"
+      ensureDoctestEq repl
       void $ Interpreter.eval repl $ ":m *" ++ module_
 
     setup_ :: IO ()
@@ -205,22 +209,71 @@ runTestGroup repl setup tests = do
     examples :: [Located Interaction]
     examples = [Located loc (e, r) | Located loc (Example e r) <- tests]
 
+newtype ReportedError = ReportedError { getReportedError :: Report () }
+
+instance Error ReportedError where
+    strMsg m = ReportedError (reportError (UnhelpfulLocation "ReportedError") "" (text ""))
+
 -- |
 -- Execute all expressions from given example in given 'Interpreter' and verify
 -- the output.
 runExampleGroup :: Interpreter -> [Located Interaction] -> Report ()
-runExampleGroup repl = go
+runExampleGroup repl interactions = either getReportedError return =<< runErrorT (go interactions)
   where
+
+    evErr :: Location -> String -> ErrorT ReportedError Report String
+    evErr loc expression = do
+      result <- liftIO (Interpreter.safeEval repl expression)
+      case result of
+        Left err -> throwError (ReportedError (reportError loc expression (text err)))
+        Right result -> return result
+
+
+    go :: [Located Interaction] -> ErrorT ReportedError Report ()
     go ((Located loc (expression, expected)) : xs) = do
-      r <- fmap lines <$> liftIO (Interpreter.safeEval repl expression)
-      case r of
-        Left err -> do
-          reportError loc expression err
-        Right actual -> case mkResult expected actual of
-          NotEqual err -> do
+      actual <- evErr loc expression
+      cleanedExpected <- evErr loc ("doctestCleanExpected "
+                                      ++ show (unlines expected))
+      cleanedActual <- evErr loc ("doctestCleanActual "
+                                      ++ show actual)
+      comparisonResult <- evErr loc (show cleanedActual
+                                      ++ " `doctestEq` "
+                                      ++ show cleanedExpected
+                                      ++ " :: Prelude.Bool")
+
+      let ppActualCleaned =
+                  dullgreen (text "actual:         ") </> hang 2 (text actual)
+            <$$>  dullgreen (text "cleanedActual:  ") </> hang 2 (text cleanedActual)
+            <$$>  dullgreen (text "cleanedExpected:") </> hang 2 (text cleanedExpected)
+            <$$>  dullgreen (text "comparisonResult:") </> hang 2 (text comparisonResult)
+            <$$>  hang 4 (text "where" <$$> hang 2
+                         (text "comparisonResult = doctestEq actualCleaned expectCleaned" <$$>
+                          text "actualCleaned = doctestCleanActual actual" <$$>
+                          text "expectCleaned = doctestCleanExpected expected"))
+
+      case readMaybe comparisonResult of
+        Nothing -> throwError $ ReportedError $ reportError loc "read comparisonResult" $
+                  ppActualCleaned
+        Just True -> do
+          lift reportSuccess
+          go xs
+        Just False -> do
+          throwError $ ReportedError $ do
             reportFailure loc expression
-            report err
-          Equal -> do
-            reportSuccess
-            go xs
+            report ppActualCleaned
     go [] = return ()
+
+
+ensureDoctestEq :: Interpreter -> IO ()
+ensureDoctestEq repl = do
+ Right _ <- Interpreter.safeEval repl $ unwords
+    ["let doctestEq a b = let",
+     "g . f = g Prelude.. f;",
+     "stripEnd = Prelude.reverse . Prelude.dropWhile Data.Char.isSpace . ",
+        "Prelude.reverse;",
+     "keepNonempty = Prelude.filter (Prelude./= \"\");",
+     "f = Prelude.unlines . keepNonempty . Prelude.map stripEnd . Prelude.lines",
+     "in f a Prelude.== f b"]
+ Right _ <- Interpreter.safeEval repl "let doctestCleanActual = Prelude.id :: Prelude.String -> Prelude.String"
+ Right _ <- Interpreter.safeEval repl "let doctestCleanExpected = Prelude.id :: Prelude.String -> Prelude.String"
+ return ()

@@ -212,6 +212,7 @@ Alternatively you can pass any GHC options to Doctest, e.g.:
 
     doctest -XCPP Foo.hs
 
+
 [language-pragma]: http://www.haskell.org/ghc/docs/latest/html/users_guide/pragmas.html#language-pragma
 
 #### OverloadedStrings example
@@ -266,6 +267,34 @@ flexible position to show/hide the dependency of your code examples
 on OverloadedStrings (as you deem fit).
 
 [overloaded-strings]: http://www.haskell.org/ghc/docs/7.8.2/html/users_guide/type-class-extensions.html#overloaded-strings
+
+### Custom comparison function
+Sometimes the output doesn't have to match exactly.  For example:
+
+  * to ignore all whitespace, not just trailing whitespace which is ignored by
+    default
+  * strip out ansi color codes
+  * alpha-rename inferred type variables
+  * emphasize part of a type error without having to guess unimportant or
+    repetitive parts like `<interactive>:173:7:` and `In expression:`
+
+To achieve this, doctest uses three functions:
+```haskell
+doctestEq :: String -> String -> Bool
+doctestEq actual expected = f actual == f expected where
+  f = unlines . filter (/= "") . map stripEnd . lines
+  stripEnd = reverse . dropWhile isSpace . reverse
+
+doctestCleanExpected :: String -> String
+doctestCleanExpected = id
+
+doctestCleanActual :: String -> String
+doctestCleanActual = id
+```
+The expression ``doctestCleanActual a `actual` doctestCleanExpected e`` is what 
+
+
+
 
 ### Cabal integration
 

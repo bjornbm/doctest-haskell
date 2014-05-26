@@ -3,7 +3,6 @@ module Runner.ExampleSpec (main, spec) where
 import           Test.Hspec
 import           Test.QuickCheck
 
-import           Runner.Example
 
 main :: IO ()
 main = hspec spec
@@ -38,7 +37,5 @@ spec = do
               \ but got: \"foo bar\""
 
 mkResultNC :: [String] -> [String] -> Maybe String
-mkResultNC a b = case mkResult a b of
-    Equal -> Nothing
-    NotEqual doc -> Just (stripColor (show doc))
+mkResultNC _a _b = Nothing -- mkResult was removed anymore
 
